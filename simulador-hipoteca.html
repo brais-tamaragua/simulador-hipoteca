@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simulador de Hipoteca</title>
+  <style>
+    /* Reset y tipografía */
+    body { margin: 0; padding: 20px; font-family: Arial, sans-serif; background: #f5f5f5; }
+    .calculator { display: flex; flex-wrap: wrap; max-width: 1000px; margin: auto; gap: 20px; align-items: stretch; }
+    .controls-box, .result-box {
+      background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      padding: 20px; flex: 1 1 400px; display: flex; flex-direction: column;
+    }
+    .controls-box { justify-content: space-between; }
+
+    /* Controles más visuales */
+    .control-group { margin-bottom: 24px; }
+    .control-group label { display: block; font-weight: bold; margin-bottom: 6px; color: #333; }
+    input[type=range] { width: 100%; height: 8px; margin-bottom: 8px; accent-color: #C1D600; }
+    input[type=number] { width: calc(100% - 60px); padding: 10px; border: 1px solid #ccc; border-radius: 4px;
+      font-size: 1.1em; text-align: right; background: #fafafa; display: inline-block;
+    }
+    .percent-display { display: inline-block; width: 50px; text-align: left; margin-left: 10px; font-size: 1.1em; }
+
+    /* Resultados */
+    .result-box h2 { font-size: 1em; color: #666; margin-bottom: 4px; text-transform: uppercase; }
+    .result-box .monthly { font-size: 3em; color: #0072C3; font-weight: bold; margin: 0 0 16px; }
+    .result-item { display: flex; justify-content: space-between; margin-bottom: 16px; color: #333; }
+    .result-item span { font-size: 1em; }
+    .result-item strong { font-weight: bold; }
+    .divider { border-top: 1px solid #e0e0e0; margin: 20px 0; }
+
+    /* Barras y leyenda */
+    .bar { display: flex; width: 100%; height: 14px; border-radius: 7px; overflow: hidden; margin: 12px 0; }
+    .bar .segment { height: 100%; }
+    .prop-price { background: #FFD54F; }
+    .prop-fees  { background: #F9A825; }
+    .save      { background: #80CBC4; }
+    .mortgage  { background: #009688; }
+    .interest  { background: #00796B; }
+    .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
+    .legend-item { display: flex; align-items: center; font-size: 0.9em; color: #333; }
+    .legend-color { width: 12px; height: 12px; border-radius: 2px; margin-right: 6px; }
+
+    /* Aviso entrada */
+    .warning { background: #E3F2FD; color: #1565C0; padding: 10px; border-radius: 4px;
+      font-size: 0.9em; margin-bottom: 16px; border-left: 4px solid #42A5F5;
+    }
+
+    /* Modal amortización */
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.5); align-items: center; justify-content: center;
+      z-index: 1000;
+    }
+    .modal.show { display: flex; }
+    .modal-content { position: relative; background: #fff; border-radius: 8px;
+      padding: 20px; width: 90%; max-width: 800px; max-height: 80%; overflow: auto;
+    }
+    .close-btn { position: absolute; top: 10px; right: 15px; font-size: 1.5em;
+      background: none; border: none; cursor: pointer; color: #666;
+    }
+    .amortization-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    .amortization-table th, .amortization-table td { border: 1px solid #ddd; padding: 8px; font-size: 0.85em; }
+    .amortization-table th { background: #f0f0f0; position: sticky; top: 0; }
+
+    button.amortization { color: #0072C3; background: none; border: none; font-size: 1em;
+      padding: 0; cursor: pointer; align-self: flex-start;
+    }
+  </style>
+</head>
+<body>
+  <div class="calculator">
+    <div class="controls-box">
+      <div>
+        <div class="control-group">
+          <label for="price">Precio de la vivienda (€)</label>
+          <input type="range" id="priceRange" min="50000" max="1000000" step="10000" value="200000">
+          <input type="number" id="price" value="200000">
+        </div>
+        <div class="control-group">
+          <label for="downPayment">Entrada (€)</label>
+          <input type="range" id="downPaymentRange" min="0" max="200000" step="1000" value="40000">
+          <input type="number" id="downPayment" value="40000"><span class="percent-display" id="downPercent">20%</span>
+        </div>
+        <div class="control-group">
+          <label for="term">Plazo (años)</label>
+          <input type="range" id="termRange" min="1" max="30" step="1" value="25">
+          <input type="number" id="term" value="25">
+        </div>
+        <div class="control-group">
+          <label for="interest">Interés anual (%)</label>
+          <input type="range" id="interestRange" min="0" max="10" step="0.1" value="2.5">
+          <input type="number" id="interest" value="2.5">
+        </div>
+      </div>
+      <button id="amortizationLink" class="amortization">Ver tabla de amortización</button>
+    </div>
+
+    <div class="result-box">
+      <div id="downWarning" class="warning" style="display:none;">
+        Recuerda que los bancos suelen pedir una aportación mínima del 10% más gastos.
+      </div>
+      <h2>Tu cuota mensual</h2>
+      <div class="monthly" id="monthlyPayment">0 €</div>
+      <div class="result-item"><span>Importe hipoteca</span><span id="loanAmount">0 €</span></div>
+      <div class="result-item"><span>Porcentaje financ.</span><span id="financingPct">0 %</span></div>
+      <div class="divider"></div>
+      <div class="result-item"><span>Precio inmueble</span><span id="priceDisplay">0 €</span></div>
+      <div class="result-item"><span>Impuestos y gastos</span><span id="feesDisplay">0 €</span></div>
+      <div class="result-item"><strong>Coste total</strong><strong id="totalPropertyCost">0 €</strong></div>
+      <div class="bar"><div class="segment prop-price" id="barPrice"></div><div class="segment prop-fees" id="barFees"></div></div>
+      <div class="legend"><div class="legend-item"><div class="legend-color prop-price"></div>Precio</div><div class="legend-item"><div class="legend-color prop-fees"></div>Gastos</div></div>
+      <div class="divider"></div>
+      <div class="result-item"><span>Ahorro aportado</span><span id="savingsDisplay">0 €</span></div>
+      <div class="result-item"><span>Importe hipoteca</span><span id="mortgageDisplay">0 €</span></div>
+      <div class="result-item"><span>Interés</span><span id="interestDisplay">0 €</span></div>
+      <div class="result-item"><strong>Coste total hipoteca</strong><strong id="totalMortgageCost">0 €</strong></div>
+      <div class="bar"><div class="segment save" id="barSave"></div><div class="segment mortgage" id="barMortgage"></div><div class="segment interest" id="barInterest"></div></div>
+      <div class="legend"><div class="legend-item"><div class="legend-color save"></div>Ahorro</div><div class="legend-item"><div class="legend-color mortgage"></div>Hipoteca</div><div class="legend-item"><div class="legend-color interest"></div>Interés</div></div>
+    </div>
+  </div>
+
+  <!-- Modal de amortización -->
+  <div id="modal" class="modal">
+    <div class="modal-content">
+      <button class="close-btn" id="closeModal">×</button>
+      <h2>Tabla de Amortización</h2>
+      <div id="amortTableContainer"></div>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const taxRate = 0.068625;
+      const els = {
+        priceRange: document.getElementById('priceRange'),
+        price: document.getElementById('price'),
+        downRange: document.getElementById('downPaymentRange'),
+        down: document.getElementById('downPayment'),
+        downPercent: document.getElementById('downPercent'),
+        termRange: document.getElementById('termRange'),
+        term: document.getElementById('term'),
+        interestRange: document.getElementById('interestRange'),
+        interest: document.getElementById('interest'),
+        downWarning: document.getElementById('downWarning'),
+        monthly: document.getElementById('monthlyPayment'),
+        loan: document.getElementById('loanAmount'),
+        pct: document.getElementById('financingPct'),
+        priceD: document.getElementById('priceDisplay'),
+        fees: document.getElementById('feesDisplay'),
+        totalProp: document.getElementById('totalPropertyCost'),
+        barPrice: document.getElementById('barPrice'),
+        barFees: document.getElementById('barFees'),
+        save: document.getElementById('barSave'),
+        mortgage: document.getElementById('barMortgage'),
+        interestD: document.getElementById('barInterest'),
+        saveVal: document.getElementById('savingsDisplay'),
+        mortVal: document.getElementById('mortgageDisplay'),
+        intVal: document.getElementById('interestDisplay'),
+        totalMort: document.getElementById('totalMortgageCost'),
+        amortLink: document.getElementById('amortizationLink'),
+        amortContainer: document.getElementById('amortTableContainer'),
+        modal: document.getElementById('modal'),
+        closeModal: document.getElementById('closeModal')
+      };
+
+      function calcPayment(P, r, y) {
+        const m = r/100/12;
+        const n = y*12;
+        return P * (m * Math.pow(1+m,n))/(Math.pow(1+m,n)-1);
+      }
+
+      function buildAmortizationTable(principal, annualRate, years) {
+        const r = annualRate/100/12;
+        const n = years*12;
+        const monthly = calcPayment(principal, annualRate, years);
+        let balance = principal;
+        const table = document.createElement('table');
+        table.className = 'amortization-table';
+        const head = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        ['Mes','Cuota','Interés','Capital','Saldo'].forEach(txt => {
+          const th = document.createElement('th'); th.textContent = txt; headRow.appendChild(th);
+        });
+        head.appendChild(headRow);
+        table.appendChild(head);
+        const body = document.createElement('tbody');
+        for(let i=1;i<=n;i++){
+          const interestCost = balance * r;
+          const principalCost = monthly - interestCost;
+          balance -= principalCost;
+          const row = document.createElement('tr');
+          [i, monthly.toFixed(2), interestCost.toFixed(2), principalCost.toFixed(2), balance.toFixed(2)].forEach(val => {
+            const td = document.createElement('td'); td.textContent = val; row.appendChild(td);
+          });
+          body.appendChild(row);
+        }
+        table.appendChild(body);
+        return table;
+      }
+
+      function update() {
+        const price = parseFloat(els.price.value);
+        const downAmt = parseFloat(els.down.value);
+        const downPct = price ? (downAmt / price * 100) : 0;
+        const years = parseFloat(els.term.value);
+        const rate = parseFloat(els.interest.value);
+
+        // Sincronizar form entradas
+        els.downRange.max = price;
+        els.downRange.value = downAmt;
+        els.downPercent.textContent = Math.round(downPct) + '%';
+
+        // Aviso entrada < 10%
+        els.downWarning.style.display = downPct < 10 ? 'block' : 'none';
+
+        const loanAmt = price - downAmt;
+        const monthly = calcPayment(loanAmt, rate, years);
+        const totalInterest = monthly * years * 12 - loanAmt;
+        const fees = price * taxRate;
+        const totalPropCost = price + fees;
+        const savings = downAmt;
+        const totalMortCost = loanAmt + totalInterest;
+
+        // Actualizar resultados
+        els.monthly.textContent = Math.round(monthly) + ' €';
+        els.loan.textContent = loanAmt.toLocaleString() + ' €';
+        els.pct.textContent = Math.round(loanAmt / price * 100) + ' %';
+        els.priceD.textContent = price.toLocaleString() + ' €';
+        els.fees.textContent = Math.round(fees) + ' €';
+        els.totalProp.textContent = Math.round(totalPropCost) + ' €';
+        els.saveVal.textContent = savings.toLocaleString() + ' €';
+        els.mortVal.textContent = loanAmt.toLocaleString() + ' €';
+        els.intVal.textContent = Math.round(totalInterest) + ' €';
+        els.totalMort.textContent = Math.round(totalMortCost) + ' €';
+
+        // Actualizar barras
+        const p1 = price / totalPropCost * 100;
+        const p2 = fees / totalPropCost * 100;
+        els.barPrice.style.width = p1 + '%';
+        els.barFees.style.width = p2 + '%';
+        const s1 = savings / totalMortCost * 100;
+        const s2 = loanAmt / totalMortCost * 100;
+        const s3 = totalInterest / totalMortCost * 100;
+        els.save.style.width = s1 + '%';
+        els.mortgage.style.width = s2 + '%';
+        els.interestD.style.width = s3 + '%';
+      }
+
+      // Sincronización de inputs
+      document.querySelectorAll('input[type=range], input[type=number]').forEach(el => {
+        el.addEventListener('input', function() {
+          const syncId = this.id.endsWith('Range') ? this.id.replace('Range', '') : this.id + 'Range';
+          const other = document.getElementById(syncId);
+          if (other) other.value = this.value;
+          update();
+        });
+      });
+
+      // Mostrar tabla amortización
+      els.amortLink.addEventListener('click', function(e) {
+        e.preventDefault();
+        els.amortContainer.innerHTML = '';
+        const price = parseFloat(els.price.value);
+        const downAmt = parseFloat(els.down.value);
+        const loanAmt = price - downAmt;
+        const years = parseFloat(els.term.value);
+        const rate = parseFloat(els.interest.value);
+        const table = buildAmortizationTable(loanAmt, rate, years);
+        els.amortContainer.appendChild(table);
+        els.modal.classList.add('show');
+      });
+
+      // Cerrar modal
+      els.closeModal.addEventListener('click', function() {
+        els.modal.classList.remove('show');
+      });
+
+      // Inicialización
+      update();
+    });
+  </script>
+</body>
+</html>
